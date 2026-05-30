@@ -1,0 +1,559 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  ADMIN
+  ASSISTENTIAL_STAFF
+  SAFETY_COMMITTEE
+  BIOMEDICAL_ENGINEERING
+  COORDINATOR
+}
+
+enum IncidentType {
+  INCIDENT
+  ADVERSE_EVENT
+  SENTINEL_EVENT
+  NEAR_MISS
+}
+
+enum IncidentStatus {
+  REPORTED
+  IN_ANALYSIS
+  IN_FOLLOW_UP
+  CLOSED
+  REOPENED
+}
+
+enum ReportType {
+  FIRST_TIME
+  FOLLOW_UP
+}
+
+enum Sex {
+  FEMALE
+  MALE
+  OTHER
+  UNDISCLOSED
+}
+
+enum ActionStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
+enum ActionType {
+  CORRECTIVE
+  PREVENTIVE
+}
+
+enum EquipmentStatus {
+  ACTIVE
+  IN_MAINTENANCE
+  OUT_OF_SERVICE
+  RETIRED
+}
+
+enum MaintenanceType {
+  PREVENTIVE
+  CORRECTIVE
+  CALIBRATION
+  VALIDATION
+}
+
+enum NotificationType {
+  INCIDENT_CREATED
+  STATUS_CHANGED
+  ACTION_DUE
+  ACTION_OVERDUE
+  SYSTEM
+}
+
+model User {
+  id             String    @id @default(uuid()) @db.Char(36)
+  name           String    @db.VarChar(160)
+  email          String    @unique @db.VarChar(190)
+  emailVerified  DateTime?
+  passwordHash   String?   @db.VarChar(255)
+  image          String?   @db.VarChar(500)
+  position       String?   @db.VarChar(120)
+  phone          String?   @db.VarChar(60)
+  active         Boolean   @default(true)
+  lastLoginAt    DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  roleId         String    @db.Char(36)
+  role           Role      @relation(fields: [roleId], references: [id])
+  areaId         String?   @db.Char(36)
+  area           Area?     @relation(fields: [areaId], references: [id])
+
+  accounts       Account[]
+  sessions       Session[]
+  incidents      IncidentReport[] @relation("ReportedBy")
+  assignedActions SafetyAction[]  @relation("ActionAssignee")
+  createdActions  SafetyAction[]  @relation("ActionCreator")
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  @@index([roleId])
+  @@index([areaId])
+  @@index([deletedAt])
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Char(36)
+  code        RoleCode @unique
+  name        String   @db.VarChar(120)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Char(36)
+  key         String   @unique @db.VarChar(120)
+  name        String   @db.VarChar(160)
+  module      String   @db.VarChar(80)
+  description String?  @db.VarChar(255)
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String @db.Char(36)
+  permissionId String @db.Char(36)
+  role         Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Area {
+  id          String   @id @default(uuid()) @db.Char(36)
+  name        String   @unique @db.VarChar(140)
+  description String?  @db.VarChar(255)
+  active      Boolean  @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  services    Service[]
+  incidents   IncidentReport[]
+  equipment   BiomedicalEquipment[]
+
+  @@index([deletedAt])
+}
+
+model Service {
+  id        String   @id @default(uuid()) @db.Char(36)
+  name      String   @db.VarChar(140)
+  active    Boolean  @default(true)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  areaId    String   @db.Char(36)
+  area      Area     @relation(fields: [areaId], references: [id])
+  incidents IncidentReport[]
+
+  @@unique([areaId, name])
+  @@index([deletedAt])
+}
+
+model IncidentReport {
+  id                        String         @id @default(uuid()) @db.Char(36)
+  code                      String         @unique @db.VarChar(40)
+  type                      IncidentType
+  status                    IncidentStatus @default(REPORTED)
+  reportType                ReportType     @default(FIRST_TIME)
+  notificationDate          DateTime
+  institutionName           String         @db.VarChar(180)
+  institutionLevel          String?        @db.VarChar(80)
+  city                      String         @db.VarChar(120)
+  department                String         @db.VarChar(120)
+  measuresTaken             Boolean        @default(false)
+  measuresDescription       String?        @db.Text
+  eventDate                 DateTime
+  detailedDescription       String         @db.Text
+  primaryDiagnosis          String?        @db.Text
+  causeDetected             Boolean        @default(false)
+  causeDescription          String?        @db.Text
+  patientWeightKg           Decimal?       @db.Decimal(6, 2)
+  physicalCondition         String?        @db.Text
+  relevantPathologies       String?        @db.Text
+  clinicalObservations      String?        @db.Text
+  devicePhysicalFeatures    String?        @db.Text
+  additionalCorrectiveActions String?      @db.Text
+  digitalSignature          String?        @db.Text
+  submittedAt               DateTime?
+  closedAt                  DateTime?
+  deletedAt                 DateTime?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  reportedById              String         @db.Char(36)
+  reportedBy                User           @relation("ReportedBy", fields: [reportedById], references: [id])
+  areaId                    String?        @db.Char(36)
+  area                      Area?          @relation(fields: [areaId], references: [id])
+  serviceId                 String?        @db.Char(36)
+  service                   Service?       @relation(fields: [serviceId], references: [id])
+  biomedicalEquipmentId     String?        @db.Char(36)
+  biomedicalEquipment       BiomedicalEquipment? @relation(fields: [biomedicalEquipmentId], references: [id])
+
+  patientInfo               PatientInfo?
+  deviceInfo                DeviceInfo?
+  reporterInfo              ReporterInfo?
+  outcomes                  IncidentOutcome[]
+  rootCauseAnalyses         RootCauseAnalysis[]
+  actions                   SafetyAction[]
+  evidences                 Evidence[]
+  attachments               Attachment[]
+  timeline                  IncidentTimeline[]
+  changeLogs                IncidentChangeLog[]
+
+  @@index([status, type])
+  @@index([eventDate])
+  @@index([notificationDate])
+  @@index([areaId])
+  @@index([serviceId])
+  @@index([reportedById])
+  @@index([deletedAt])
+}
+
+model PatientInfo {
+  id                   String @id @default(uuid()) @db.Char(36)
+  patientInitials      String @db.VarChar(12)
+  identificationNumber String? @db.VarChar(80)
+  age                  Int?
+  sex                  Sex
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  incidentReportId     String @unique @db.Char(36)
+  incidentReport       IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+}
+
+model DeviceInfo {
+  id                    String @id @default(uuid()) @db.Char(36)
+  genericName           String @db.VarChar(180)
+  commercialName        String? @db.VarChar(180)
+  manufacturer          String? @db.VarChar(180)
+  lotOrSerialNumber     String? @db.VarChar(140)
+  modelReference        String? @db.VarChar(140)
+  brand                 String? @db.VarChar(140)
+  sanitaryRegistration  String? @db.VarChar(140)
+  softwareVersion       String? @db.VarChar(80)
+  distributorImporter   String? @db.VarChar(180)
+  operatingArea         String? @db.VarChar(180)
+  reportedToManufacturer Boolean @default(false)
+  additionalNote        String? @db.Text
+  associatedAccessories String? @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  incidentReportId      String @unique @db.Char(36)
+  incidentReport        IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+}
+
+model ReporterInfo {
+  id               String @id @default(uuid()) @db.Char(36)
+  name             String @db.VarChar(160)
+  profession       String @db.VarChar(140)
+  address          String? @db.VarChar(220)
+  phone            String? @db.VarChar(60)
+  email            String? @db.VarChar(190)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  incidentReportId String @unique @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+}
+
+model IncidentOutcome {
+  id               String @id @default(uuid()) @db.Char(36)
+  key              String @db.VarChar(80)
+  label            String @db.VarChar(180)
+  createdAt        DateTime @default(now())
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentReportId, key])
+}
+
+model RootCauseAnalysis {
+  id               String @id @default(uuid()) @db.Char(36)
+  title            String @db.VarChar(180)
+  conclusion       String? @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  createdById      String? @db.Char(36)
+
+  ishikawaCategories IshikawaCategory[]
+  fiveWhys           FiveWhy[]
+
+  @@index([incidentReportId])
+  @@index([deletedAt])
+}
+
+model IshikawaCategory {
+  id                  String @id @default(uuid()) @db.Char(36)
+  category            String @db.VarChar(80)
+  description         String? @db.Text
+  contributingFactors String? @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  rootCauseAnalysisId String @db.Char(36)
+  rootCauseAnalysis   RootCauseAnalysis @relation(fields: [rootCauseAnalysisId], references: [id], onDelete: Cascade)
+
+  @@unique([rootCauseAnalysisId, category])
+}
+
+model FiveWhy {
+  id                  String @id @default(uuid()) @db.Char(36)
+  sequence            Int
+  question            String @db.Text
+  answer              String @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  rootCauseAnalysisId String @db.Char(36)
+  rootCauseAnalysis   RootCauseAnalysis @relation(fields: [rootCauseAnalysisId], references: [id], onDelete: Cascade)
+
+  @@unique([rootCauseAnalysisId, sequence])
+}
+
+model SafetyAction {
+  id               String @id @default(uuid()) @db.Char(36)
+  type             ActionType
+  title            String @db.VarChar(180)
+  description      String @db.Text
+  status           ActionStatus @default(OPEN)
+  dueDate          DateTime
+  completedAt      DateTime?
+  evidenceNotes    String? @db.Text
+  deletedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  assigneeId       String? @db.Char(36)
+  assignee         User? @relation("ActionAssignee", fields: [assigneeId], references: [id])
+  createdById      String @db.Char(36)
+  createdBy        User @relation("ActionCreator", fields: [createdById], references: [id])
+  attachments      Attachment[]
+
+  @@index([status, dueDate])
+  @@index([assigneeId])
+  @@index([deletedAt])
+}
+
+model BiomedicalEquipment {
+  id                String @id @default(uuid()) @db.Char(36)
+  name              String @db.VarChar(180)
+  brand             String? @db.VarChar(140)
+  model             String? @db.VarChar(140)
+  serial            String? @unique @db.VarChar(140)
+  manufacturer      String? @db.VarChar(180)
+  manufactureYear   Int?
+  location          String @db.VarChar(180)
+  status            EquipmentStatus @default(ACTIVE)
+  lastMaintenanceAt DateTime?
+  nextMaintenanceAt DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  areaId            String? @db.Char(36)
+  area              Area? @relation(fields: [areaId], references: [id])
+  incidents         IncidentReport[]
+  maintenances      Maintenance[]
+
+  @@index([status])
+  @@index([areaId])
+  @@index([nextMaintenanceAt])
+  @@index([deletedAt])
+}
+
+model Maintenance {
+  id                    String @id @default(uuid()) @db.Char(36)
+  type                  MaintenanceType
+  performedAt           DateTime
+  nextDueAt             DateTime?
+  provider              String? @db.VarChar(180)
+  description           String @db.Text
+  result                String? @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  biomedicalEquipmentId String @db.Char(36)
+  biomedicalEquipment   BiomedicalEquipment @relation(fields: [biomedicalEquipmentId], references: [id], onDelete: Cascade)
+
+  @@index([performedAt])
+  @@index([nextDueAt])
+}
+
+model Evidence {
+  id               String @id @default(uuid()) @db.Char(36)
+  title            String @db.VarChar(180)
+  description      String? @db.Text
+  fileUrl          String @db.VarChar(500)
+  mimeType         String @db.VarChar(120)
+  sizeBytes        Int
+  createdAt        DateTime @default(now())
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id               String @id @default(uuid()) @db.Char(36)
+  fileName         String @db.VarChar(220)
+  fileUrl          String @db.VarChar(500)
+  mimeType         String @db.VarChar(120)
+  sizeBytes        Int
+  createdAt        DateTime @default(now())
+
+  incidentReportId String? @db.Char(36)
+  incidentReport   IncidentReport? @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  safetyActionId   String? @db.Char(36)
+  safetyAction     SafetyAction? @relation(fields: [safetyActionId], references: [id], onDelete: Cascade)
+
+  @@index([incidentReportId])
+  @@index([safetyActionId])
+}
+
+model IncidentTimeline {
+  id               String @id @default(uuid()) @db.Char(36)
+  title            String @db.VarChar(180)
+  description      String? @db.Text
+  status           IncidentStatus?
+  createdAt        DateTime @default(now())
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  createdById      String? @db.Char(36)
+
+  @@index([incidentReportId, createdAt])
+}
+
+model IncidentChangeLog {
+  id               String @id @default(uuid()) @db.Char(36)
+  field            String @db.VarChar(120)
+  oldValue         String? @db.Text
+  newValue         String? @db.Text
+  createdAt        DateTime @default(now())
+
+  incidentReportId String @db.Char(36)
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+  changedById      String? @db.Char(36)
+
+  @@index([incidentReportId, createdAt])
+}
+
+model Notification {
+  id          String @id @default(uuid()) @db.Char(36)
+  type        NotificationType
+  title       String @db.VarChar(180)
+  message     String @db.Text
+  readAt      DateTime?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  userId      String @db.Char(36)
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([type])
+}
+
+model AuditLog {
+  id          String @id @default(uuid()) @db.Char(36)
+  action      String @db.VarChar(120)
+  entity      String @db.VarChar(120)
+  entityId    String? @db.Char(36)
+  ipAddress   String? @db.VarChar(80)
+  userAgent   String? @db.VarChar(500)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  userId      String? @db.Char(36)
+  user        User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Indicator {
+  id          String @id @default(uuid()) @db.Char(36)
+  key         String @unique @db.VarChar(120)
+  name        String @db.VarChar(180)
+  value       Decimal @db.Decimal(12, 2)
+  periodStart DateTime
+  periodEnd   DateTime
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([periodStart, periodEnd])
+}
+
+model Account {
+  id                String  @id @default(uuid()) @db.Char(36)
+  userId            String  @db.Char(36)
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Char(36)
+  sessionToken String   @unique
+  userId       String   @db.Char(36)
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
